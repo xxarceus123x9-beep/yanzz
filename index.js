@@ -3,6 +3,7 @@ const express = require('express');
 const fs = require('fs');
 const path = require('path');
 const https = require('https');
+const AdmZip = require('adm-zip');
 
 // 1. DUMMY WEB SERVER
 const app = express();
@@ -11,8 +12,9 @@ app.get('/', (req, res) => res.send('MCC Background Sync Active.'));
 app.listen(PORT, () => console.log(`Railway Health Server online via port ${PORT}`));
 
 const mccExecutable = path.join(__dirname, 'MinecraftClient');
+const zipPath = path.join(__dirname, 'mcc.zip');
 
-// 2. RAW NATIVE STREAM DOWNLOADER (No curl or unzip binaries needed)
+// 2. REDIRECT-SAFE HTTPS FILE DOWNLOADER
 function downloadFile(url, dest, callback) {
     https.get(url, (response) => {
         if (response.statusCode === 302 || response.statusCode === 301) {
@@ -37,26 +39,33 @@ function downloadFile(url, dest, callback) {
 
 function setupMCC() {
     if (fs.existsSync(mccExecutable)) {
-        console.log("MCC standalone executable already present. Starting client...");
+        console.log("MCC native executable already present. Starting client...");
         runMCC();
         return;
     }
 
     console.log("Initializing Minecraft Console Client (MCC) native download...");
     
-    // Download the single standalone native executable directly from GitHub
+    // Using the accurate, official Linux compilation archive file link
     const downloadUrl = 'https://github.com';
 
-    downloadFile(downloadUrl, mccExecutable, () => {
-        console.log("Download complete. Optimizing permissions...");
+    downloadFile(downloadUrl, zipPath, () => {
+        console.log("Download complete. Extracting zip archive via native library wrapper...");
         try {
-            // Give Linux full core permission flags to launch the program file
+            const zip = new AdmZip(zipPath);
+            zip.extractAllTo(__dirname, true);
+            
+            // Delete raw downloaded zip to free up space
+            fs.unlinkSync(zipPath);
+            
+            // Give Linux full core permission flags to launch the program binary file
             execSync(`chmod +x "${mccExecutable}"`);
+            console.log("Environment ready.");
+            runMCC();
         } catch (e) {
-            console.log("Permission configuration skipped or not required.");
+            console.error("Extraction error encountered:", e.message);
+            process.exit(1);
         }
-        console.log("Environment ready.");
-        runMCC();
     });
 }
 
@@ -66,7 +75,7 @@ function runMCC() {
 
     const child = spawn(mccExecutable, [], { 
         cwd: __dirname,
-        stdio: 'inherit' // Instantly pipes bot connection events directly to Railway console screen
+        stdio: 'inherit' // Pipes bot connection events directly to the Railway console
     });
 
     child.on('error', (err) => {
