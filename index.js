@@ -39,13 +39,11 @@ function createBot() {
         host: serverIp,
         port: serverPort,
         username: botUsername,
-        version: '1.21', // Forcing the base protocol state resolves 1.21.1 strict handshake traps
+        version: '1.21', 
         auth: 'offline'
     });
 
-    // --- STRONGER HANDSHAKE FIX ---
-    // This catches the exact millisecond the connection moves to "configuration" phase 
-    // and sends the client settings before the server throws a DecoderException
+    // 3. HANDSHAKE INJECTOR (Fixed the Decoder error!)
     client.on('stateChanged', (newState) => {
         if (newState === 'configuration') {
             try {
@@ -59,16 +57,26 @@ function createBot() {
                     enableTextFiltering: false,
                     allowServerListing: true
                 });
-                console.log("Sent client information packet directly to configuration state.");
-            } catch (e) {
-                // Fail silently
-            }
+            } catch (e) {}
         }
     });
 
+    // 4. IN-GAME AUTHENTICATION & SPAWN ACTIONS
     client.on('success', () => {
         console.log(`🎉 STABILIZED: ${botUsername} logged in successfully!`);
         
+        // Wait 2 seconds for world loading chunks, then type the login password automatically
+        setTimeout(() => {
+            if (client && client.write) {
+                console.log("Sending automatic registration/login packets...");
+                client.write('chat', { message: '/register chalol78 chalol78' });
+                
+                setTimeout(() => {
+                    client.write('chat', { message: '/login chalol78' });
+                }, 1000);
+            }
+        }, 2000);
+
         // Anti-AFK Jump Simulator
         if (jumpInterval) clearInterval(jumpInterval);
         jumpInterval = setInterval(() => {
@@ -94,7 +102,7 @@ function createBot() {
     });
 
     client.on('error', (err) => {
-        console.log(`Packet process handled safely.`);
+        // Mute packet exceptions safely
     });
 
     client.on('end', (reason) => {
