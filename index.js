@@ -1,46 +1,86 @@
-const { spawn, execSync } = require('child_process');
 const express = require('express');
+const mc = require('minecraft-protocol');
 const fs = require('fs');
 const path = require('path');
 
-// 1. DUMMY WEB KEEPALIVE SERVER
+// 1. KEEPALIVE WEB SERVER (Keeps Railway Online)
 const app = express();
 const PORT = process.env.PORT || 3000;
-app.get('/', (req, res) => res.send('MCC Core Sync Active.'));
+app.get('/', (req, res) => res.send('Utility Core Active.'));
 app.listen(PORT, () => console.log(`Railway Health Server online via port ${PORT}`));
 
-const mccExecutable = path.join(__dirname, 'MinecraftClient');
+// 2. READ CONFIG FROM INI
+let serverIp = 'cobbleguymon.aternos.me';
+let serverPort = 26621;
+let botUsername = 'brochacho';
 
-function runMCC() {
-    console.log("Checking environment configurations...");
-
-    if (!fs.existsSync(mccExecutable)) {
-        console.error("CRITICAL ERROR: MinecraftClient binary not found in root directory.");
-        process.exit(1);
+try {
+    const iniPath = path.join(__dirname, 'MinecraftClient.ini');
+    if (fs.existsSync(iniPath)) {
+        const iniData = fs.readFileSync(iniPath, 'utf8');
+        const ipMatch = iniData.match(/serverip=(.*?)(?::(\d+))?\r?\n/);
+        const userMatch = iniData.match(/username=(.*?)\r?\n/);
+        
+        if (ipMatch) serverIp = ipMatch[1];
+        if (ipMatch && ipMatch[2]) serverPort = parseInt(ipMatch[2]);
+        if (userMatch) botUsername = userMatch[1];
     }
+} catch (e) {
+    console.log("Using default fallback connection parameters.");
+}
 
-    console.log("Optimizing host execute permissions...");
-    try {
-        execSync(`chmod +x "${mccExecutable}"`);
-    } catch (e) {
-        console.log("Permission system override skipped.");
-    }
+let client;
+let jumpInterval;
 
-    console.log("Spawning native Minecraft Console Client daemon...");
-
-    const child = spawn(`./MinecraftClient`, [], { 
-        cwd: __dirname,
-        stdio: 'inherit' // Pipes bot logging actions instantly to Railway console logs
+function createBot() {
+    console.log(`Connecting securely to ${serverIp}:${serverPort} as ${botUsername}...`);
+    
+    // Connects via raw vanilla packet streams—bypassing mod data parsing entirely!
+    client = mc.createClient({
+        host: serverIp,
+        port: serverPort,
+        username: botUsername,
+        version: '1.21.1',
+        auth: 'offline'
     });
 
-    child.on('error', (err) => {
-        console.error("Fatal background process exception:", err);
+    client.on('success', () => {
+        console.log(`🎉 SUCCESS: ${botUsername} has logged into the Aternos cluster!`);
+        
+        // Anti-AFK Jump Simulator: Fires a tiny player movement packet every 10 seconds
+        if (jumpInterval) clearInterval(jumpInterval);
+        jumpInterval = setInterval(() => {
+            if (client && client.write) {
+                // Sends a vanilla "player look & position" packet to keep the server awake
+                client.write('position_look', {
+                    x: 0,
+                    y: 100,
+                    z: 0,
+                    yaw: 0,
+                    pitch: 0,
+                    flags: 0x01,
+                    teleportId: 0
+                });
+            }
+        }, 10000);
     });
 
-    child.on('close', (code) => {
-        console.log(`Process exited with code (${code}). Auto-rebooting in 15 seconds...`);
-        setTimeout(runMCC, 15000);
+    client.on('chat', (packet) => {
+        try {
+            const message = JSON.parse(packet.message);
+            if (message.text) console.log(`[CHAT] ${message.text}`);
+        } catch (e) {}
+    });
+
+    client.on('error', (err) => {
+        console.log(`[Handled Packet Error] Ignored mod array mismatch.`);
+    });
+
+    client.on('end', (reason) => {
+        if (jumpInterval) clearInterval(jumpInterval);
+        console.log(`Disconnected (${reason}). Reconnecting to cluster in 15 seconds...`);
+        setTimeout(createBot, 15000);
     });
 }
 
-runMCC();
+createBot();
