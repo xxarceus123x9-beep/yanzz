@@ -3,7 +3,7 @@ const mineflayer = require('mineflayer');
 const fs = require('fs');
 const path = require('path');
 
-// 1. WEB SERVER SETUP (Keeps Railway/Render online)
+// 1. WEB SERVER SETUP (Keeps Railway online)
 const app = express();
 const PORT = process.env.PORT || 3000;
 
@@ -38,7 +38,7 @@ const botConfig = {
 let bot;
 let afkInterval;
 let reconnectAttempts = 0;
-const MAX_ATTEMPTS = 5; // Safety cutoff to prevent spamming your Aternos server
+const MAX_ATTEMPTS = 5; 
 
 function createBot() {
     if (reconnectAttempts >= MAX_ATTEMPTS) {
@@ -49,11 +49,19 @@ function createBot() {
     console.log(`Connecting to ${botConfig.host}:${botConfig.port} as ${botConfig.username}...`);
     bot = mineflayer.createBot(botConfig);
 
-    // 4. MODDED SERVER SAFETY (Mutes Fabric/Cobblemon custom data streams to prevent crashes)
+    // 4. OVERRIDE CARDINAL COMPONENTS MOD PACKETS (Stops Aternos Crash)
     bot.on('login', () => {
         if (bot._client) {
-            bot._client.on('custom_payload', () => {
-                return; // Safely drops custom mod payloads
+            // Mute general custom payloads
+            bot._client.on('custom_payload', (packet) => {
+                // Intercept the problematic cardinal components sync channels
+                if (packet.channel && packet.channel.includes('cardinal-components')) {
+                    // Force-acknowledge the channel packet to keep the Fabric server happy
+                    bot._client.write('custom_payload', {
+                        channel: packet.channel,
+                        data: Buffer.alloc(0)
+                    });
+                }
             });
         }
     });
@@ -61,7 +69,7 @@ function createBot() {
     // 5. BOT SPAWN ACTIONS
     bot.once('spawn', () => {
         console.log(`Success: ${bot.username} has spawned in the server.`);
-        reconnectAttempts = 0; // Reset reconnection loop counter
+        reconnectAttempts = 0; 
 
         // Handles in-game authentication commands if enabled
         if (settings.utils?.['auto-auth']?.enabled) {
@@ -72,12 +80,12 @@ function createBot() {
             }, 1000);
         }
 
-        // Safety Delay: Wait 3 seconds before moving to bypass anti-cheat filters
+        // Safety Delay: Wait 5 seconds before moving to bypass anti-cheat filters
         setTimeout(() => {
             if (settings.movement?.['random-jump']?.enabled) {
                 startAntiAFKLoop();
             }
-        }, 3000);
+        }, 5000);
     });
 
     // 6. CHAT LOGGER
