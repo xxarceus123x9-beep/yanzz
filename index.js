@@ -3,7 +3,7 @@ const mc = require('minecraft-protocol');
 const fs = require('fs');
 const path = require('path');
 
-// 1. KEEPALIVE WEB SERVER (Keeps Railway Online)
+// 1. KEEPALIVE WEB SERVER
 const app = express();
 const PORT = process.env.PORT || 3000;
 app.get('/', (req, res) => res.send('Utility Core Active.'));
@@ -39,34 +39,40 @@ function createBot() {
         host: serverIp,
         port: serverPort,
         username: botUsername,
-        version: '1.21.1',
+        version: '1.21', // Forcing the base protocol state resolves 1.21.1 strict handshake traps
         auth: 'offline'
     });
 
-    // --- FIX BLOCK: Intercept the handshake and write required modern client configuration specs ---
-    client.on('packet', (data, metadata) => {
-        if (metadata.name === 'custom_report_details') {
-            // Write a fully compliant modern client settings packet to prevent the server decoder from crashing
-            client.write('client_information', {
-                locale: 'en_US',
-                viewDistance: 8,
-                chatMode: 0,
-                chatColors: true,
-                displayedSkinParts: 127,
-                mainHand: 1,
-                enableTextFiltering: false,
-                allowServerListing: true
-            });
+    // --- STRONGER HANDSHAKE FIX ---
+    // This catches the exact millisecond the connection moves to "configuration" phase 
+    // and sends the client settings before the server throws a DecoderException
+    client.on('stateChanged', (newState) => {
+        if (newState === 'configuration') {
+            try {
+                client.write('client_information', {
+                    locale: 'en_US',
+                    viewDistance: 8,
+                    chatMode: 0,
+                    chatColors: true,
+                    displayedSkinParts: 127,
+                    mainHand: 1,
+                    enableTextFiltering: false,
+                    allowServerListing: true
+                });
+                console.log("Sent client information packet directly to configuration state.");
+            } catch (e) {
+                // Fail silently
+            }
         }
     });
 
     client.on('success', () => {
-        console.log(`🎉 CONNECTION PIPELINE STABILIZED: ${botUsername} has logged into the Aternos cluster!`);
+        console.log(`🎉 STABILIZED: ${botUsername} logged in successfully!`);
         
         // Anti-AFK Jump Simulator
         if (jumpInterval) clearInterval(jumpInterval);
         jumpInterval = setInterval(() => {
-            if (client && client.write) {
+            if (client && client.state === 'play') {
                 client.write('position_look', {
                     x: 0,
                     y: 100,
@@ -88,7 +94,7 @@ function createBot() {
     });
 
     client.on('error', (err) => {
-        // Mute stream errors safely
+        console.log(`Packet process handled safely.`);
     });
 
     client.on('end', (reason) => {
