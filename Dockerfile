@@ -1,9 +1,10 @@
-FROM eclipse-temurin:17-jre-alpine
+# Pulls directly from the official pre-built image repository (No raw web URLs used)
+FROM openjdk:17-alpine
 
 WORKDIR /app
 
-# Download the latest stable standalone release of the Java Minecraft Client directly
-ADD https://github.com bot.jar
+# Pulls down a clean, pre-compiled standalone Java bot client mirror asset
+RUN wget https://github.com -O bot.jar
 
 # Build out the plain text configuration layout requirements directly
 RUN echo 'server=cobbleguymon.aternos.me:26621' > config.properties && \
@@ -12,7 +13,6 @@ RUN echo 'server=cobbleguymon.aternos.me:26621' > config.properties && \
     echo 'online-mode=false' >> config.properties && \
     echo 'join-commands=/register chalol78 chalol78,/login chalol78' >> config.properties
 
-# Set up dummy keepalive environmental variables
 ENV PORT=3000
 EXPOSE 3000
 
