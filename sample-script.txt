@@ -1,0 +1,4 @@
+wait 5
+/register chalol78 chalol78
+wait 2
+/login chalol78
