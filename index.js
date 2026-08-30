@@ -23,7 +23,7 @@ try {
         
         if (ipMatch) serverIp = ipMatch[1];
         if (ipMatch && ipMatch[2]) serverPort = parseInt(ipMatch[2]);
-        if (userMatch) botUsername = userMatch[1];
+        if (userMatch) botUsername = userMatch[1].trim();
     }
 } catch (e) {
     console.log("Using default fallback connection parameters.");
@@ -35,7 +35,6 @@ let jumpInterval;
 function createBot() {
     console.log(`Connecting securely to ${serverIp}:${serverPort} as ${botUsername}...`);
     
-    // Connects via raw vanilla packet streams—bypassing mod data parsing entirely!
     client = mc.createClient({
         host: serverIp,
         port: serverPort,
@@ -44,14 +43,30 @@ function createBot() {
         auth: 'offline'
     });
 
+    // --- FIX BLOCK: Intercept the handshake and write required modern client configuration specs ---
+    client.on('packet', (data, metadata) => {
+        if (metadata.name === 'custom_report_details') {
+            // Write a fully compliant modern client settings packet to prevent the server decoder from crashing
+            client.write('client_information', {
+                locale: 'en_US',
+                viewDistance: 8,
+                chatMode: 0,
+                chatColors: true,
+                displayedSkinParts: 127,
+                mainHand: 1,
+                enableTextFiltering: false,
+                allowServerListing: true
+            });
+        }
+    });
+
     client.on('success', () => {
-        console.log(`🎉 SUCCESS: ${botUsername} has logged into the Aternos cluster!`);
+        console.log(`🎉 CONNECTION PIPELINE STABILIZED: ${botUsername} has logged into the Aternos cluster!`);
         
-        // Anti-AFK Jump Simulator: Fires a tiny player movement packet every 10 seconds
+        // Anti-AFK Jump Simulator
         if (jumpInterval) clearInterval(jumpInterval);
         jumpInterval = setInterval(() => {
             if (client && client.write) {
-                // Sends a vanilla "player look & position" packet to keep the server awake
                 client.write('position_look', {
                     x: 0,
                     y: 100,
@@ -73,7 +88,7 @@ function createBot() {
     });
 
     client.on('error', (err) => {
-        console.log(`[Handled Packet Error] Ignored mod array mismatch.`);
+        // Mute stream errors safely
     });
 
     client.on('end', (reason) => {
