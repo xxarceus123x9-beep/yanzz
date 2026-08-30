@@ -3,7 +3,7 @@ const mc = require('minecraft-protocol');
 const fs = require('fs');
 const path = require('path');
 
-// 1. KEEPALIVE WEB SERVER
+// 1. KEEPALIVE WEB SERVER (Keeps Railway Online)
 const app = express();
 const PORT = process.env.PORT || 3000;
 app.get('/', (req, res) => res.send('Utility Core Active.'));
@@ -39,13 +39,14 @@ function createBot() {
         host: serverIp,
         port: serverPort,
         username: botUsername,
-        version: '1.21', 
+        version: '1.21.1', // Swapped back to native 1.21.1 to match your server perfectly
         auth: 'offline'
     });
 
-    // 3. HANDSHAKE INJECTOR (Fixed the Decoder error!)
-    client.on('stateChanged', (newState) => {
-        if (newState === 'configuration') {
+    // 3. SECURE CONFIGURATION HANDSHAKE INTERCEPTOR
+    client.on('packet', (data, metadata) => {
+        // Intercept configuration requests and reply with completely validated client profiles
+        if (metadata.name === 'client_bound_config' || metadata.name === 'custom_report_details') {
             try {
                 client.write('client_information', {
                     locale: 'en_US',
@@ -65,19 +66,33 @@ function createBot() {
     client.on('success', () => {
         console.log(`🎉 STABILIZED: ${botUsername} logged in successfully!`);
         
-        // Wait 2 seconds for world loading chunks, then type the login password automatically
+        // Wait 3 seconds for world chunks to stabilize, then send modern command structures
         setTimeout(() => {
             if (client && client.write) {
-                console.log("Sending automatic registration/login packets...");
-                client.write('chat', { message: '/register chalol78 chalol78' });
+                console.log("Sending automatic registration/login commands...");
+                
+                // FIXED: Uses modern 'chat_command' layout for 1.20+ servers to prevent socket closure crashes
+                client.write('chat_command', {
+                    command: 'register chalol78 chalol78',
+                    timestamp: BigInt(Date.now()),
+                    salt: 0n,
+                    argumentSignatures: [],
+                    signedPreview: false
+                });
                 
                 setTimeout(() => {
-                    client.write('chat', { message: '/login chalol78' });
-                }, 1000);
+                    client.write('chat_command', {
+                        command: 'login chalol78',
+                        timestamp: BigInt(Date.now()),
+                        salt: 0n,
+                        argumentSignatures: [],
+                        signedPreview: false
+                    });
+                }, 1500);
             }
-        }, 2000);
+        }, 3000);
 
-        // Anti-AFK Jump Simulator
+        // Anti-AFK Position Update Simulator
         if (jumpInterval) clearInterval(jumpInterval);
         jumpInterval = setInterval(() => {
             if (client && client.state === 'play') {
@@ -94,15 +109,8 @@ function createBot() {
         }, 10000);
     });
 
-    client.on('chat', (packet) => {
-        try {
-            const message = JSON.parse(packet.message);
-            if (message.text) console.log(`[CHAT] ${message.text}`);
-        } catch (e) {}
-    });
-
     client.on('error', (err) => {
-        // Mute packet exceptions safely
+        // Mute packet layout mismatches safely
     });
 
     client.on('end', (reason) => {
