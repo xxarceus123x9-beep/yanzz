@@ -1,0 +1,26 @@
+name: Fetch Bot Binary
+on:
+  push:
+    branches: [ main, master ]
+  workflow_dispatch:
+
+jobs:
+  download:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Fetch Clean Linux Executable
+        run: |
+          wget https://github.com
+          unzip MinecraftClient-1.21.1-linux-x64.unzip
+          rm MinecraftClient-1.21.1-linux-x64.unzip
+
+      - name: Commit Binary to Repository
+        run: |
+          git config --global user.name "GitHub Action"
+          git config --global user.email "action@github.com"
+          git add MinecraftClient
+          git commit -m "Add compiled native bot binary file directly to repo" || exit 0
+          git push
