@@ -3,32 +3,15 @@ const mineflayer = require('mineflayer');
 const fs = require('fs');
 const path = require('path');
 
-// 1. DUMMY WEB SERVER (Keeps Render happy so it doesn't auto-ban/fail your app)
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-app.get('/', (req, res) => {
-    res.send('AFK Bot Service is online and operational.');
-});
+app.get('/', (req, res) => res.send('AFK Bot Service Active.'));
+app.listen(PORT, () => console.log(`Health-check server running on port ${PORT}`));
 
-app.listen(PORT, () => {
-    console.log(`Render health-check web server listening on port ${PORT}`);
-});
-
-// 2. READ CONFIGURATION (Pulls your settings automatically)
 const settingsPath = path.join(__dirname, 'settings.json');
-let settings;
+let settings = JSON.parse(fs.readFileSync(settingsPath, 'utf8'));
 
-try {
-    const rawData = fs.readFileSync(settingsPath, 'utf8');
-    settings = JSON.parse(rawData);
-} catch (error) {
-    console.error("Error reading settings.json file:", error.message);
-    process.exit(1);
-}
-
-// 3. MINECRAFT BOT LOGIC
-// Fixed the syntax error below by using bracket notation ['bot-account']
 const botConfig = {
     host: settings.server.ip,
     port: parseInt(settings.server.port) || 25565,
@@ -37,51 +20,62 @@ const botConfig = {
 };
 
 let bot;
+let afkInterval;
+let reconnectAttempts = 0;
+const MAX_ATTEMPTS = 5; // Absolute cutoff to stop the bot from crashing your Aternos server
 
 function createBot() {
-    console.log(`Connecting to ${botConfig.host}:${botConfig.port} as ${botConfig.username}...`);
+    if (reconnectAttempts >= MAX_ATTEMPTS) {
+        console.log("CRITICAL: Bot kicked repeatedly. Stopping loop to prevent Aternos server shutdown.");
+        return;
+    }
+
+    console.log(`Attempting connection to ${botConfig.host}...`);
     bot = mineflayer.createBot(botConfig);
 
-    bot.on('spawn', () => {
-        console.log(`Success: ${bot.username} has spawned in the server.`);
+    bot.once('spawn', () => {
+        console.log(`Success: ${bot.username} entered the server.`);
+        reconnectAttempts = 0; // Connection stable, reset the counter
+
+        // 1. Handle in-game Auth plugin if enabled
+        if (settings.utils?.['auto-auth']?.enabled) {
+            const pass = settings.utils['auto-auth'].password;
+            bot.chat(`/register ${pass} ${pass}`);
+            setTimeout(() => {
+                bot.chat(`/login ${pass}`);
+            }, 1000);
+        }
+
+        // 2. Safety Delay: Wait 3 seconds before starting movement loops to bypass anti-cheat filters
+        setTimeout(() => {
+            if (settings.movement?.['random-jump']?.enabled) {
+                startAntiAFKLoop();
+            }
+        }, 3000);
+    });
+
+    bot.on('error', (err) => console.log(`Network/Protocol Error: ${err.message}`));
+
+    bot.on('end', (reason) => {
+        if (afkInterval) clearInterval(afkInterval);
+        reconnectAttempts++;
         
-        // Triggers the anti-AFK routine if enabled in your settings.json
-        if (settings.movement?.['random-jump']?.enabled) {
-            startAntiAFKLoop();
-        }
-    });
-
-    bot.on('chat', (username, message) => {
-        if (settings.utils?.['chat-log']) {
-            console.log(`[CHAT] <${username}> ${message}`);
-        }
-    });
-
-    bot.on('error', (err) => {
-        console.log(`Bot Error encountered: ${err.message}`);
-    });
-
-    bot.on('end', () => {
         const delay = settings.utils?.['auto-reconnect-delay'] || 15000;
-        console.log(`Bot disconnected. Auto-reconnecting in ${delay / 1000} seconds...`);
+        console.log(`Disconnected (${reason}). Reconnecting item #${reconnectAttempts} in ${delay / 1000}s...`);
         setTimeout(createBot, delay);
     });
 }
 
-// Simple anti-AFK behavior (Jumping based on your interval)
-let afkInterval;
 function startAntiAFKLoop() {
     if (afkInterval) clearInterval(afkInterval);
-    
     const intervalTime = settings.movement?.['random-jump']?.interval || 10000;
     
     afkInterval = setInterval(() => {
         if (bot && bot.entity) {
             bot.setControlState('jump', true);
-            setTimeout(() => bot.setControlState('jump', false), 500);
+            setTimeout(() => bot.setControlState('jump', false), 400);
         }
     }, intervalTime);
 }
 
-// Initialize the bot loop
 createBot();
