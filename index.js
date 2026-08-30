@@ -49,18 +49,24 @@ function createBot() {
     console.log(`Connecting to ${botConfig.host}:${botConfig.port} as ${botConfig.username}...`);
     bot = mineflayer.createBot(botConfig);
 
-    // 4. OVERRIDE CARDINAL COMPONENTS MOD PACKETS (Stops Aternos Crash)
+    // 4. NETWORK CATCH-ALLS (Stops large Modded NBT Packet Overflows from crashing)
     bot.on('login', () => {
         if (bot._client) {
             // Mute general custom payloads
             bot._client.on('custom_payload', (packet) => {
-                // Intercept the problematic cardinal components sync channels
                 if (packet.channel && packet.channel.includes('cardinal-components')) {
-                    // Force-acknowledge the channel packet to keep the Fabric server happy
                     bot._client.write('custom_payload', {
                         channel: packet.channel,
                         data: Buffer.alloc(0)
                     });
+                }
+            });
+
+            // Catch protocol-level array errors before they bubble up and crash Node
+            bot._client.on('error', (err) => {
+                if (err.message.includes('array size') || err.message.includes('play.toClient')) {
+                    console.log(`[Handled Safely] Ignored heavy mod item packet overflow.`);
+                    return; // Swallows the parsing error cleanly
                 }
             });
         }
@@ -80,7 +86,7 @@ function createBot() {
             }, 1000);
         }
 
-        // Safety Delay: Wait 5 seconds before moving to bypass anti-cheat filters
+        // Safety Delay: Wait 5 seconds before jumping to clear spawn item syncs
         setTimeout(() => {
             if (settings.movement?.['random-jump']?.enabled) {
                 startAntiAFKLoop();
@@ -97,6 +103,8 @@ function createBot() {
 
     // 7. ERROR AND RECONNECT HANDLERS
     bot.on('error', (err) => {
+        // Prevent top-level mineflayer crashes for mod arrays
+        if (err.message.includes('array size')) return;
         console.log(`Bot Error encountered: ${err.message}`);
     });
 
