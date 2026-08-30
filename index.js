@@ -28,10 +28,11 @@ try {
 }
 
 // 3. MINECRAFT BOT LOGIC
+// Fixed the syntax error below by using bracket notation ['bot-account']
 const botConfig = {
     host: settings.server.ip,
     port: parseInt(settings.server.port) || 25565,
-    username: settings.bot-account?.username || 'AFK_Bot',
+    username: settings['bot-account']?.username || 'AFK_Bot',
     version: settings.server.version || false
 };
 
